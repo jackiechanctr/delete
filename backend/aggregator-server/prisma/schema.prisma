@@ -1,0 +1,344 @@
+generator client {
+  provider        = "prisma-client-js"
+  output          = "../generated/client"
+  previewFeatures = ["multiSchema"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["aggregator"]
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  ADVISOR
+  OPERATIONS
+  VIEWER
+
+  @@schema("aggregator")
+}
+
+enum PropertyCategory {
+  RESIDENTIAL
+  COMMERCIAL
+  RENTAL
+  LAND
+
+  @@schema("aggregator")
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+
+  @@schema("aggregator")
+}
+
+enum AlertStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+
+  @@schema("aggregator")
+}
+
+enum RetryJobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  DEAD_LETTER
+
+  @@schema("aggregator")
+}
+
+enum IdentitySource {
+  EQUITY
+  MUTUAL_FUND
+  CRM
+  MANUAL
+  REAL_ESTATE
+
+  @@schema("aggregator")
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  firstName    String   @map("first_name")
+  lastName     String   @map("last_name")
+  role         UserRole @default(VIEWER)
+  active       Boolean  @default(true)
+  failedLogins Int      @default(0) @map("failed_logins")
+  lockedUntil  DateTime? @map("locked_until")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  sessions      Session[]
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
+  notifications Notification[]
+
+  @@map("users")
+  @@schema("aggregator")
+}
+
+model Permission {
+  id          String @id @default(uuid()) @db.Uuid
+  code        String @unique
+  description String
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+  @@schema("aggregator")
+}
+
+model RolePermission {
+  id           String   @id @default(uuid()) @db.Uuid
+  role         UserRole
+  permissionId String   @map("permission_id") @db.Uuid
+
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([role, permissionId])
+  @@map("role_permissions")
+  @@schema("aggregator")
+}
+
+model Session {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  tokenHash String   @map("token_hash")
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+  @@schema("aggregator")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  tokenHash String   @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+  @@schema("aggregator")
+}
+
+model Investor {
+  id              String   @id @default(uuid()) @db.Uuid
+  unifiedId       String   @unique @map("unified_id")
+  displayName     String   @map("display_name")
+  email           String?
+  pan             String?  @unique
+  phone           String?
+  riskProfile     String?  @map("risk_profile")
+  totalNetWorth   Decimal? @map("total_net_worth") @db.Decimal(20, 2)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  identities   InvestorIdentity[]
+  properties   Property[]
+  wealthSnapshots WealthSnapshot[]
+  alerts       Alert[]
+
+  @@index([email])
+  @@index([pan])
+  @@map("investors")
+  @@schema("aggregator")
+}
+
+model InvestorIdentity {
+  id           String         @id @default(uuid()) @db.Uuid
+  investorId   String         @map("investor_id") @db.Uuid
+  source       IdentitySource
+  externalId   String         @map("external_id")
+  email        String?
+  pan          String?
+  metadata     Json?
+  confidence   Decimal        @default(1) @db.Decimal(5, 4)
+  isPrimary    Boolean        @default(false) @map("is_primary")
+  reconciledAt DateTime?      @map("reconciled_at")
+  createdAt    DateTime       @default(now()) @map("created_at")
+
+  investor Investor @relation(fields: [investorId], references: [id], onDelete: Cascade)
+
+  @@unique([source, externalId])
+  @@index([email])
+  @@index([pan])
+  @@map("investor_identities")
+  @@schema("aggregator")
+}
+
+model Property {
+  id           String           @id @default(uuid()) @db.Uuid
+  investorId   String           @map("investor_id") @db.Uuid
+  name         String
+  category     PropertyCategory
+  address      String?
+  city         String?
+  purchasePrice Decimal         @map("purchase_price") @db.Decimal(20, 2)
+  purchaseDate DateTime         @map("purchase_date") @db.Date
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+
+  investor      Investor       @relation(fields: [investorId], references: [id], onDelete: Cascade)
+  valuations    Valuation[]
+  rentalIncomes RentalIncome[]
+
+  @@index([investorId])
+  @@map("properties")
+  @@schema("aggregator")
+}
+
+model Valuation {
+  id           String   @id @default(uuid()) @db.Uuid
+  propertyId   String   @map("property_id") @db.Uuid
+  value        Decimal  @db.Decimal(20, 2)
+  valuedAt     DateTime @map("valued_at") @db.Date
+  source       String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId, valuedAt])
+  @@map("valuations")
+  @@schema("aggregator")
+}
+
+model RentalIncome {
+  id         String   @id @default(uuid()) @db.Uuid
+  propertyId String   @map("property_id") @db.Uuid
+  amount     Decimal  @db.Decimal(18, 2)
+  periodStart DateTime @map("period_start") @db.Date
+  periodEnd  DateTime @map("period_end") @db.Date
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId])
+  @@map("rental_income")
+  @@schema("aggregator")
+}
+
+model WealthSnapshot {
+  id                 String   @id @default(uuid()) @db.Uuid
+  investorId         String   @map("investor_id") @db.Uuid
+  totalNetWorth      Decimal  @map("total_net_worth") @db.Decimal(20, 2)
+  equityValue        Decimal  @map("equity_value") @db.Decimal(20, 2)
+  mfValue            Decimal  @map("mf_value") @db.Decimal(20, 2)
+  realEstateValue    Decimal  @map("real_estate_value") @db.Decimal(20, 2)
+  diversificationScore Decimal @map("diversification_score") @db.Decimal(5, 2)
+  liquidityRatio     Decimal  @map("liquidity_ratio") @db.Decimal(8, 4)
+  riskExposure       String?  @map("risk_exposure")
+  allocationJson     Json     @map("allocation_json")
+  computedAt         DateTime @default(now()) @map("computed_at")
+
+  investor Investor @relation(fields: [investorId], references: [id], onDelete: Cascade)
+
+  @@index([investorId, computedAt])
+  @@map("wealth_snapshots")
+  @@schema("aggregator")
+}
+
+model Alert {
+  id         String        @id @default(uuid()) @db.Uuid
+  investorId String?       @map("investor_id") @db.Uuid
+  title      String
+  message    String
+  severity   AlertSeverity
+  status     AlertStatus   @default(OPEN)
+  source     String
+  metadata   Json?
+  createdAt  DateTime      @default(now()) @map("created_at")
+  resolvedAt DateTime?     @map("resolved_at")
+
+  investor Investor? @relation(fields: [investorId], references: [id], onDelete: SetNull)
+
+  @@index([status, severity])
+  @@map("alerts")
+  @@schema("aggregator")
+}
+
+model Notification {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  title     String
+  body      String
+  read      Boolean  @default(false)
+  channel   String   @default("in_app")
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+  @@map("notifications")
+  @@schema("aggregator")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String?  @map("user_id") @db.Uuid
+  action     String
+  resource   String
+  resourceId String?  @map("resource_id")
+  ipAddress  String?  @map("ip_address")
+  metadata   Json?
+  correlationId String? @map("correlation_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([correlationId])
+  @@map("audit_logs")
+  @@schema("aggregator")
+}
+
+model RetryJob {
+  id          String         @id @default(uuid()) @db.Uuid
+  jobType     String         @map("job_type")
+  payload     Json
+  status      RetryJobStatus @default(PENDING)
+  attempts    Int            @default(0)
+  maxAttempts Int            @default(5) @map("max_attempts")
+  lastError   String?        @map("last_error")
+  scheduledAt DateTime       @default(now()) @map("scheduled_at")
+  completedAt DateTime?      @map("completed_at")
+  createdAt   DateTime       @default(now()) @map("created_at")
+
+  @@index([status, scheduledAt])
+  @@map("retry_jobs")
+  @@schema("aggregator")
+}
+
+model ServiceHealth {
+  id           String   @id @default(uuid()) @db.Uuid
+  serviceName  String   @map("service_name")
+  status       String
+  latencyMs    Int?     @map("latency_ms")
+  errorRate    Decimal? @map("error_rate") @db.Decimal(8, 4)
+  lastChecked  DateTime @default(now()) @map("last_checked")
+  metadata     Json?
+
+  @@unique([serviceName])
+  @@map("service_health")
+  @@schema("aggregator")
+}

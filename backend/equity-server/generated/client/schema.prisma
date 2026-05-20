@@ -1,0 +1,123 @@
+generator client {
+  provider        = "prisma-client-js"
+  output          = "../generated/client"
+  previewFeatures = ["multiSchema"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["equity"]
+}
+
+enum TransactionType {
+  BUY
+  SELL
+  DIVIDEND
+  BONUS
+
+  @@schema("equity")
+}
+
+model EquityUser {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  externalId   String?  @map("external_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  refreshTokens RefreshToken[]
+  holdings      Holding[]
+  transactions  Transaction[]
+  watchlists    Watchlist[]
+
+  @@map("users")
+  @@schema("equity")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  tokenHash String   @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user EquityUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+  @@schema("equity")
+}
+
+model Holding {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  investorRef  String   @map("investor_ref")
+  symbol       String
+  companyName  String   @map("company_name")
+  quantity     Decimal  @db.Decimal(18, 4)
+  avgBuyPrice  Decimal  @map("avg_buy_price") @db.Decimal(18, 4)
+  currentPrice Decimal  @map("current_price") @db.Decimal(18, 4)
+  sector       String?
+  exchange     String   @default("NSE")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user EquityUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([investorRef, symbol])
+  @@index([investorRef])
+  @@index([userId])
+  @@map("holdings")
+  @@schema("equity")
+}
+
+model Transaction {
+  id          String          @id @default(uuid()) @db.Uuid
+  userId      String          @map("user_id") @db.Uuid
+  investorRef String          @map("investor_ref")
+  symbol      String
+  type        TransactionType
+  quantity    Decimal         @db.Decimal(18, 4)
+  price       Decimal         @db.Decimal(18, 4)
+  totalAmount Decimal         @map("total_amount") @db.Decimal(18, 4)
+  executedAt  DateTime        @map("executed_at")
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  user EquityUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([investorRef, executedAt])
+  @@index([userId])
+  @@map("transactions")
+  @@schema("equity")
+}
+
+model Watchlist {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  investorRef String   @map("investor_ref")
+  name        String
+  symbols     String[]
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user EquityUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([investorRef])
+  @@map("watchlists")
+  @@schema("equity")
+}
+
+model MarketPrice {
+  id        String   @id @default(uuid()) @db.Uuid
+  symbol    String   @unique
+  price     Decimal  @db.Decimal(18, 4)
+  changePct Decimal  @map("change_pct") @db.Decimal(8, 4)
+  volume    BigInt?
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("market_prices")
+  @@schema("equity")
+}

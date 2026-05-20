@@ -1,0 +1,27 @@
+{
+  "name": "wealth-intelligence-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Unified Wealth Intelligence Platform - Enterprise FinTech Monorepo",
+  "workspaces": [
+    "backend/aggregator-server",
+    "backend/equity-server",
+    "backend/mutual-fund-server",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently -n agg,equ,mf,web -c blue,green,yellow,magenta \"npm run dev -w backend/aggregator-server\" \"npm run dev -w backend/equity-server\" \"npm run dev -w backend/mutual-fund-server\" \"npm run dev -w frontend\"",
+    "build": "npm run build -w backend/equity-server && npm run build -w backend/mutual-fund-server && npm run build -w backend/aggregator-server && npm run build -w frontend",
+    "test": "npm run test --workspaces --if-present",
+    "db:generate": "npm run db:generate -w backend/aggregator-server && npm run db:generate -w backend/equity-server && npm run db:generate -w backend/mutual-fund-server",
+    "db:push": "npm run db:push -w backend/aggregator-server && npm run db:push -w backend/equity-server && npm run db:push -w backend/mutual-fund-server",
+    "db:seed": "npm run db:seed -w backend/equity-server && npm run db:seed -w backend/mutual-fund-server && npm run db:seed -w backend/aggregator-server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
